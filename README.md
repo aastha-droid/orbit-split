@@ -21,7 +21,7 @@ Splitting a bill always ends in awkward math and chasing friends for money. We w
 Built for the **PayPal AI Hackathon** on Devpost, November 2026.
 
 ## Team
-- Astha (builder)
+- Aastha (builder)
 - Sajid (created the PayPal developer account in Australia)
 
 ## Run it locally
