@@ -1,0 +1,15 @@
+// GET ?id=INV2-... -> {status, paid}
+import { paypal, json } from '../../lib/paypal.mjs';
+
+export default async (req) => {
+  try {
+    const id = new URL(req.url).searchParams.get('id');
+    if (!id) return json({ error: 'missing id' }, 400);
+    const r = await paypal(`/v2/invoicing/invoices/${encodeURIComponent(id)}`);
+    if (!r.ok) return json({ error: 'status failed', detail: r.data }, 502);
+    const status = r.data.status;                       // e.g. SENT, PAID, MARKED_AS_PAID
+    return json({ status, paid: status === 'PAID' || status === 'MARKED_AS_PAID' });
+  } catch (e) {
+    return json({ error: String(e) }, 500);
+  }
+};

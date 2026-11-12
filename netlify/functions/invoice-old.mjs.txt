@@ -1,0 +1,52 @@
+// POST {name, amount, email} -> {id, payLink}
+// PayPal Invoicing is two steps: create a DRAFT, then SEND it (a draft is invisible to the payer).
+import { paypal, json } from '../../lib/paypal.mjs';
+
+export default async (req) => {
+  try {
+    const { name, amount, email } = await req.json();
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 1) Create the draft.
+    const draft = await paypal('/v2/invoicing/invoices', {
+      method: 'POST',
+      body: {
+        detail: {
+          invoice_date: today,
+          currency_code: 'AUD',                       // sandbox accounts are Australian
+          note: 'Orbit Split - your share of the bill',
+          payment_term: { term_type: 'DUE_ON_RECEIPT' },
+        },
+        invoicer: { email_address: process.env.PAYPAL_SELLER_EMAIL },
+        primary_recipients: [{ billing_info: { name: { given_name: name }, email_address: email } }],
+        items: [{
+          name: 'Your share',
+          quantity: '1',
+          unit_amount: { currency_code: 'AUD', value: Number(amount).toFixed(2) }, // PayPal wants a string like "900.00"
+        }],
+      },
+    });
+    if (!draft.ok) return json({ error: 'create failed', detail: draft.data }, 502);
+
+    // The reply holds a link; the invoice id is the last part of its URL.
+    const href = draft.data.href || draft.data.links?.find(l => l.rel === 'self')?.href;
+    const id = href.split('/').pop();
+
+    // 2) Send it to the buyer.
+    const sent = await paypal(`/v2/invoicing/invoices/${id}/send`, {
+      method: 'POST',
+      body: { send_to_recipient: true, send_to_invoicer: false },
+    });
+    if (!sent.ok) return json({ error: 'send failed', detail: sent.data }, 502);
+
+    // 3) Fetch the invoice to get the link the buyer opens to pay (used for testing in the sandbox).
+    const info = await paypal(`/v2/invoicing/invoices/${id}`);
+    const payLink = info.data?.detail?.metadata?.recipient_view_url
+      || info.data?.links?.find(l => l.rel === 'payer-view' || l.rel === 'recipient-view')?.href
+      || null;
+
+    return json({ id, payLink });
+  } catch (e) {
+    return json({ error: String(e) }, 500);
+  }
+};

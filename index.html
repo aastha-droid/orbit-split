@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Mobile first: width=device-width makes the layout match the phone's real width,
+     otherwise phones pretend to be a ~980px desktop and shrink everything. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit Split</title>
+<style>
+/* Exo 2 = the font for the red-marked area. Orbitron = title only (it was outside your marked area). */
+@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
+
+:root {
+  --ink: #aebbd6;      /* main text: dimmed white so it doesn't pop over the rocket */
+  --ink-dim: #7f8fb0;
+  --line: #24457f;
+  --blue: #2f6df6;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; overflow-x: hidden;
+  display: flex; justify-content: center;
+  color: var(--ink);
+  background: radial-gradient(ellipse at 50% 0%, #0d2147 0%, #050b1c 45%, #000 100%);
+}
+/* Star layer sits behind everything (z-index 0); pointer-events none so it never blocks taps. */
+#stars { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.star { position: absolute; border-radius: 50%; background: #cfe0ff; animation: twinkle 3s infinite ease-in-out; }
+@keyframes twinkle { 0%,100% { opacity: .25; } 50% { opacity: .9; } }
+
+.phone { position: relative; z-index: 1; width: 100%; max-width: 430px; padding: 16px 14px 28px; }
+.title {
+  font-family: 'Orbitron', sans-serif; font-weight: 700;
+  text-align: center; margin: 4px 0 14px; font-size: 32px; letter-spacing: .08em; color: #9db3e0;
+}
+
+/* ===== The red-marked area. All of it uses Exo 2. =====
+   Form controls (textarea/button) do NOT inherit fonts by default in browsers,
+   so we set the font on every descendant with `.panel *` instead of just `.panel`. */
+.panel, .panel * { font-family: 'Exo 2', sans-serif; }
+
+.input-box {
+  border: 1px solid #223a66; border-radius: 14px; padding: 12px;
+  background: rgba(8, 20, 48, .7);
+}
+textarea {
+  width: 100%; min-height: 96px; resize: none; border: 0; outline: none;
+  background: transparent; color: #c3cfe6; font-size: 15px; line-height: 1.4; font-weight: 400;
+}
+/* Deep red: dark enough not to glare against the dark sky, bright enough to read as "the" action. */
+#splitBtn {
+  width: 100%; margin-top: 8px; padding: 12px; cursor: pointer;
+  font-weight: 600; font-size: 17px; letter-spacing: .14em; color: #ffd9d9;
+  background: linear-gradient(#b3202a, #861019);
+  border: 1px solid #d0414c; border-radius: 10px;
+  box-shadow: 0 0 14px rgba(179, 32, 42, .35);
+}
+#splitBtn:active { transform: scale(.98); }
+
+/* ===== Scene ===== */
+.scene { position: relative; height: 300px; margin-top: 6px; }
+.ground { position: absolute; left: 0; right: 0; bottom: 22px; height: 8px; z-index: 1;
+  background: #141e33; border-top: 1px solid #2b3a58; border-radius: 3px; }
+
+/* Rocket: bottom is negative so the nozzle (not the flame area of the SVG) rests on the ground line. */
+.rocket { position: absolute; left: 50%; bottom: -42px; width: 120px; height: 230px; z-index: 2;
+  transform: translateX(-50%); filter: brightness(1.12); }
+/* The rocket image is taller than the scene (its flame area hangs ~40px below the ground line), which
+   would sit on top of the first payment button and swallow taps. pointer-events:none = clicks pass through it. */
+.rocket { pointer-events: none; }
+.rocket svg { width: 100%; height: 100%; overflow: visible; }
+.flame { opacity: 0; transform-origin: 60px 158px; }
+.rocket.fire .flame { opacity: 1; animation: flicker .12s infinite alternate; }
+@keyframes flicker { from { transform: scaleY(.85); } to { transform: scaleY(1.15); } }
+/* translateX(-50%) must be repeated in every transform on .rocket or it would jump sideways. */
+.rocket.shaking { animation: shake .1s infinite; }
+@keyframes shake {
+  0%,100% { transform: translateX(-50%); }
+  25% { transform: translateX(calc(-50% - 2px)); }
+  75% { transform: translateX(calc(-50% + 2px)); }
+}
+/* The transition lives on the destination class, so adding .launch animates from rest to far above. */
+/* --rise is set by JS right before liftoff, so the rocket always stops high on screen (where the burst
+   happens) no matter how tall the phone is. ease-in = it accelerates, like a real launch. */
+.rocket.launch { animation: none; transform: translate(-50%, var(--rise, -600px));
+  transition: transform 2.25s cubic-bezier(.45, 0, .9, .55); }
+
+.smoke { position: absolute; left: 50%; bottom: 20px; z-index: 3; width: 0; height: 0; pointer-events: none; }
+.smoke span { position: absolute; width: 46px; height: 46px; border-radius: 50%; background: #8791a6; opacity: 0; }
+.smoke.go span { animation: puff 2.4s ease-out forwards; }
+@keyframes puff {
+  0%   { opacity: 0;  transform: translate(-50%, 0) scale(.3); }
+  20%  { opacity: .75; }
+  100% { opacity: 0;  transform: translate(calc(-50% + var(--dx)), -40px) scale(2.6); }
+}
+
+/* Astronaut: position comes from the --x variable, so JS only changes one number to make them walk.
+   `left` has a transition, so changing --x slides them instead of teleporting. */
+.astro { position: absolute; bottom: calc(30px + var(--lift, 0px)); left: var(--x); z-index: 2;
+  transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
+  transition: left 1.1s ease-in-out, bottom 1.1s ease-in-out, opacity .4s, transform .4s; }
+.astro svg { filter: brightness(1.15); display: block; }
+/* width: max-content makes the tag hug its text, so "Sai 1,300" can never spill out of the box. */
+.tag {
+  width: max-content; padding: 5px 10px; margin-bottom: 8px; text-align: center;
+  font-weight: 600; font-size: 13px; line-height: 1.2; color: #c3cfe6;
+  background: #0b1a3a; border: 1px solid var(--blue); border-radius: 8px; transition: opacity .3s;
+}
+.astro.boarding .tag { opacity: 0; }
+.astro.inside { opacity: 0; transform: translateX(-50%) scale(.5); }
+
+/* ===== Payment rows ===== */
+.rows { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.row { display: grid; grid-template-columns: 74px 1fr auto; gap: 8px; align-items: center;
+  padding: 8px; border: 1px solid #1d3463; border-radius: 10px; background: rgba(8, 20, 48, .6); }
+.who { display: flex; flex-direction: column; line-height: 1.15; }
+.who .n { font-weight: 600; font-size: 16px; color: #c3cfe6; }
+.who .amt { font-weight: 400; font-size: 15px; color: var(--ink-dim); }
+.req { padding: 8px 6px; cursor: pointer; font-weight: 600; font-size: 11.5px; letter-spacing: .04em; line-height: 1.2;
+  /* rgba(...) with low alpha = semi-transparent: the starry sky shows through, but text stays readable. */
+  color: #b4ecc4; background: rgba(31, 110, 52, .35); border: 1px solid rgba(58, 163, 87, .75); border-radius: 6px; }
+.req:disabled { opacity: .45; cursor: default; }
+.pill { padding: 6px 10px; font-weight: 600; font-size: 12px; letter-spacing: .06em; border-radius: 10px;
+  background: transparent; border: 1px solid #2f4f8f; color: #8fa6d8; }
+/* READY = same deep red as the Split it button, but see-through so the two feel like a pair. */
+.pill.ready { background: rgba(179, 32, 42, .3); border-color: rgba(208, 65, 76, .75); color: #ffb8bd; }
+.pill.waiting { cursor: pointer; border-color: #4f7dd6; color: #b7cbf5; }
+.pill.paid { border-color: #3aa357; color: #7be08f; }
+
+.banner { margin-top: 12px; padding: 12px; text-align: center; font-weight: 600; font-size: 14px;
+  letter-spacing: .06em; color: #9db3e0; border: 1px solid var(--line); border-radius: 10px; background: rgba(8, 20, 48, .7); }
+  /* Final state: red text on a semi-transparent red panel */
+.banner.done { color: #ff5a64; background: rgba(179,32,42,.3); border-color: rgba(255,90,100,.65); text-shadow: 0 0 12px rgba(255,90,100,.6); }/* Popup that appears at the spot where the rocket exploded.
+   position: fixed uses screen coordinates, so JS can place it exactly on the blast. */
+.mission { position: absolute; z-index: 30; max-width: 88vw; padding: 14px 22px; text-align: center;
+  font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: .08em;
+  color: #ff5a64; background: rgba(179,32,42,.3); border: 1px solid rgba(255,90,100,.7);
+  border-radius: 14px; text-shadow: 0 0 14px rgba(255,90,100,.7); backdrop-filter: blur(4px);
+  pointer-events: none; opacity: 0; transform: translate(-50%,-50%) scale(.6);
+  animation: missionPop .6s .4s ease-out forwards; }   /* .4s delay: let the sparks start first */
+.mission small { display: block; margin-top: 6px; font-size: 12px; letter-spacing: .16em; }
+@keyframes missionPop { to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+/* ===== Explosion layer: fixed to the screen so it can sit exactly where the rocket ended up ===== */
+#burst { position: fixed; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; }
+.flash { position: absolute; width: 20px; height: 20px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, #ffe9a8 35%, rgba(255,160,60,.6) 60%, rgba(255,160,60,0) 75%);
+  transform: translate(-50%, -50%) scale(0); animation: flash .7s ease-out forwards; }
+@keyframes flash {
+  0%   { transform: translate(-50%, -50%) scale(0);  opacity: 1; }
+  35%  { transform: translate(-50%, -50%) scale(6);  opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(9);  opacity: 0; }
+}
+.ring { position: absolute; width: 20px; height: 20px; border: 3px solid #ffd27a; border-radius: 50%;
+  opacity: 0; animation: ring .9s ease-out .05s forwards; }
+@keyframes ring {
+  0%   { opacity: .9; transform: translate(-50%, -50%) scale(.2); }
+  100% { opacity: 0;  transform: translate(-50%, -50%) scale(11); }
+}
+/* Each spark flies to its own --dx/--dy (set per spark in JS), shrinking and fading as it goes. */
+.spark { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--c);
+  box-shadow: 0 0 10px 2px var(--c); animation: spark 1.5s cubic-bezier(.1, .7, .3, 1) forwards; }
+@keyframes spark {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(1.4); }
+  60%  { opacity: 1; }   /* stay bright for most of the flight, then fade */
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.2); }
+}
+/* Tiny star bits that drift down slowly after the bang, so the sky feels like it's settling. */
+.bit { position: absolute; border-radius: 50%; background: #cfe0ff; opacity: 0; animation: drift 3s ease-in var(--d) forwards; }
+@keyframes drift {
+  0%   { opacity: 0; transform: translate(0, 0); }
+  15%  { opacity: .9; }
+  100% { opacity: 0; transform: translate(var(--dx), 190px); }
+}
+.hint { margin: 8px 2px 0; font-size: 12px; color: #5f6f94; text-align: center; }
+</style>
+</head>
+<body>
+<div id="stars"></div>
+<div id="burst"></div>
+
+<main class="phone">
+  <h1 class="title">ORBIT SPLIT</h1>
+
+  <section class="panel">
+    <div class="input-box">
+      <textarea id="bill">Dinner was 4,000, four of us, I paid. Adi had pasta and dessert, Riana only a drink, Sai had the big steak, we shared the pizza.</textarea>
+      <button id="splitBtn">SPLIT IT</button>
+    </div>
+
+    <div class="scene" id="scene">
+      <div class="ground"></div>
+      <div class="smoke" id="smoke">
+        <span style="--dx:-70px; animation-delay:0s"></span>
+        <span style="--dx:-40px; animation-delay:.15s"></span>
+        <span style="--dx:-10px; animation-delay:.3s"></span>
+        <span style="--dx:20px;  animation-delay:.1s"></span>
+        <span style="--dx:50px;  animation-delay:.25s"></span>
+        <span style="--dx:80px;  animation-delay:.4s"></span>
+      </div>
+      <div class="rocket" id="rocket">
+        <svg viewBox="0 0 120 230" aria-label="rocket">
+          <defs>
+            <clipPath id="bodyClip"><path d="M60 8 C92 38 98 92 98 150 L22 150 C22 92 28 38 60 8 Z"/></clipPath>
+            <linearGradient id="bodyG" x1="0" x2="1">
+              <stop offset="0" stop-color="#aeb8c9"/><stop offset=".45" stop-color="#e6ebf3"/><stop offset="1" stop-color="#9aa6ba"/>
+            </linearGradient>
+            <radialGradient id="flameG" cx=".5" cy="0" r="1">
+              <stop offset="0" stop-color="#fff3b0"/><stop offset=".4" stop-color="#ff9a1f"/><stop offset="1" stop-color="#ff3d00" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <g class="flame"><path d="M44 158 Q60 235 76 158 Z" fill="url(#flameG)"/></g>
+          <path d="M24 112 L4 172 L24 156 Z" fill="#b3202a"/>
+          <path d="M96 112 L116 172 L96 156 Z" fill="#b3202a"/>
+          <path d="M60 8 C92 38 98 92 98 150 L22 150 C22 92 28 38 60 8 Z" fill="url(#bodyG)"/>
+          <!-- clip-path keeps the red nose and stripe inside the curved body outline -->
+          <g clip-path="url(#bodyClip)">
+            <rect x="0" y="0" width="120" height="48" fill="#c4272f"/>
+            <rect x="0" y="98" width="120" height="9" fill="#c4272f"/>
+          </g>
+          <circle cx="60" cy="68" r="14" fill="#2a3a5c"/>
+          <circle cx="60" cy="68" r="10" fill="#0a1530"/>
+          <ellipse cx="56" cy="64" rx="4" ry="2.5" fill="#6f8fd6" opacity=".7"/>
+          <rect x="47" y="116" width="26" height="34" rx="13" fill="#0a1530" stroke="#7b869b"/>
+          <rect x="42" y="150" width="36" height="8" rx="2" fill="#6b7589"/>
+        </svg>
+      </div>
+    </div>
+
+    <ul class="rows" id="rows"></ul>
+    <div class="banner" id="banner">TYPE A BILL, THEN TAP SPLIT IT</div>
+    <p class="hint">PayPal sandbox: fake money, real invoices.</p>
+  </section>
+</main>
+
+<script>
+/* ---------- Stars ----------
+   Generated by JS instead of 70 hand-written divs: same result, one loop. */
+(function makeStars() {
+  const box = document.getElementById('stars');
+  for (let i = 0; i < 70; i++) {
+    const s = document.createElement('div');
+    const size = Math.random() * 2 + 1;
+    s.className = 'star';
+    s.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*100}%;width:${size}px;height:${size}px;animation-delay:${Math.random()*3}s`;
+    box.appendChild(s);
+  }
+})();
+
+/* ---------- Astronaut drawing (white suit, blue gloves, boots and arm stripe) ---------- */
+/* Astronaut redrawn to follow your reference: round chubby body, arms hanging down at the sides, belt pouch, boots.
+   WHY the arms no longer show "separate lines": before, each arm was its own outlined shape sitting on top of
+   the body, so its outline cut across the suit. Now the body, arms and legs are one merged shape, drawn twice:
+   1) first with a thick dark stroke (this becomes ONE outline around the whole silhouette),
+   2) then again as plain white fill on top, which hides every inner line where the shapes overlap.
+   BODY holds those shared shapes so we write them once and reuse them for both layers. */
+const BODY = `
+  <ellipse cx="45" cy="56" rx="17" ry="16"/>
+  <!-- arms: tall rounded capsules, tilted 8 degrees so the hands hang a little away from the hips -->
+  <rect x="23" y="46" width="10" height="22" rx="5" transform="rotate(8 28 46)"/>
+  <rect x="57" y="46" width="10" height="22" rx="5" transform="rotate(-8 62 46)"/>
+  <rect x="31" y="64" width="12" height="17" rx="5.5"/>
+  <rect x="47" y="64" width="12" height="17" rx="5.5"/>`;
+
+const ASTRONAUT_SVG = `
+<svg viewBox="0 0 90 90" width="64" height="64" aria-hidden="true" stroke-linejoin="round">
+  <!-- helmet ear-pieces (behind everything) -->
+  <rect x="17" y="20" width="9" height="17" rx="4" fill="#b9c0d6" stroke="#2a1f4a" stroke-width="1.4"/>
+  <rect x="64" y="20" width="9" height="17" rx="4" fill="#b9c0d6" stroke="#2a1f4a" stroke-width="1.4"/>
+  <!-- backpack; its blue stripe shows at the sides because the body covers the middle -->
+  <rect x="19" y="38" width="52" height="32" rx="10" fill="#b9c0d6" stroke="#2a1f4a" stroke-width="1.4"/>
+  <rect x="19.7" y="41" width="50.6" height="5" fill="#2f6df6"/>
+  <!-- merged body: outline layer, then fill layer -->
+  <g fill="#2a1f4a" stroke="#2a1f4a" stroke-width="3">${BODY}</g>
+  <g fill="#e9edf5">${BODY}</g>
+  <!-- crease: one soft curved fold per arm that fades out, so the arm looks separate from the body without
+       a hard line (a full line would bring back the Lego/Roblox look) -->
+  <defs>
+    <!-- the crease line is solid at the armpit (y=52) and fades to nothing by y=64, like a fold in cloth.
+         userSpaceOnUse = the gradient is measured in the drawing's own coordinates, so "fade over y 52..64"
+         means the same thing for both arms. -->
+    <linearGradient id="creaseFade" gradientUnits="userSpaceOnUse" x1="0" y1="52" x2="0" y2="64">
+      <stop offset="0" stop-color="#8f98b4" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#8f98b4" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#creaseFade)" stroke-width="1.3" stroke-linecap="round">
+    <path d="M32.2 52 Q30.4 57 30.9 64"/><path d="M57.8 52 Q59.6 57 59.1 64"/>
+  </g>
+  <!-- blue shoes -->
+  <rect x="27" y="78" width="17" height="9" rx="4.5" fill="#2f6df6" stroke="#2a1f4a" stroke-width="1.4"/>
+  <rect x="46" y="78" width="17" height="9" rx="4.5" fill="#2f6df6" stroke="#2a1f4a" stroke-width="1.4"/>
+  <!-- blue belt, pouch, blue button -->
+  <rect x="30.2" y="60" width="29.6" height="5" fill="#2f6df6" stroke="#2a1f4a" stroke-width="1"/>
+  <rect x="38" y="57.5" width="13" height="9.5" rx="3" fill="#cfd5e6" stroke="#2a1f4a" stroke-width="1.3"/>
+  <circle cx="47" cy="61.7" r="2.1" fill="#2f6df6" stroke="#2a1f4a" stroke-width=".8"/>
+  <circle cx="46.4" cy="61.1" r=".7" fill="#bcd6ff"/>
+  <!-- blue gloves: plain round mittens, soft blue edge (no dark lines) -->
+  <circle cx="25.5" cy="66" r="5.6" fill="#2f6df6" stroke="#1b4fc4" stroke-width="1"/>
+  <circle cx="23.8" cy="64.3" r="1.3" fill="#8fb6ff" opacity=".85"/>
+  <circle cx="64.5" cy="66" r="5.6" fill="#2f6df6" stroke="#1b4fc4" stroke-width="1"/>
+  <circle cx="62.8" cy="64.3" r="1.3" fill="#8fb6ff" opacity=".85"/>
+  <!-- helmet, rim arc, dark visor, shine -->
+  <circle cx="45" cy="28" r="22" fill="#eef1f7" stroke="#2a1f4a" stroke-width="1.5"/>
+  <path d="M26 21 Q45 4 64 21" fill="none" stroke="#2a1f4a" stroke-width="1.3"/>
+  <ellipse cx="45" cy="31" rx="17.5" ry="15.5" fill="#2a1a48" stroke="#2a1f4a" stroke-width="1.5"/>
+  <path d="M34 24 Q41 17.5 51 19.5 Q42 20.5 37 29 Z" fill="#9a91c4" opacity=".9"/>
+  <circle cx="54.5" cy="28" r="2.6" fill="#9a91c4" opacity=".9"/>
+  <circle cx="51" cy="36" r="3.2" fill="#9a91c4" opacity=".85"/>
+</svg>`;
+
+/* ---------- Split logic ----------
+   The browser never talks to Gemini directly: it calls OUR Netlify Function, which holds the API key.
+   If anything fails we fall back to fixed demo data, so the app (and the demo video) never dead-ends. */
+const DEMO_RESULT = {
+  total: 4000,
+  people: [
+    { name: 'Heeya', amount: 900 },
+    { name: 'Adi',   amount: 1100 },
+    { name: 'Riana', amount: 700 },
+    { name: 'Sai', amount: 1300 },
+  ],
+};
+async function splitBill(text) {
+  try {
+    const res = await fetch('/.netlify/functions/split', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.people || !data.people.length) throw new Error(data.error || 'empty split');
+    return data;
+  } catch (e) {
+    console.warn('Gemini split failed, using demo data:', e);
+    return DEMO_RESULT;
+  }
+}
+
+/* Sandbox buyer emails (fake test accounts), in order. Person i gets BUYER_EMAILS[i % length], so if a bill
+   has more people than buyers the list wraps around instead of giving "undefined". */
+const BUYER_EMAILS = [
+  'sb-hz9bi53778964@personal.example.com',   // Nowshin Riana
+  'sb-43gw7v53778971@personal.example.com',  // Sai Rahman
+  'sb-fbaai53778986@personal.example.com',   // Sanika Heeya
+  'sb-cir1g53778997@personal.example.com',   // Adi Rahman
+];
+
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('en-US');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let people = [];   // each: { name, amount, status: 'ready' | 'waiting' | 'paid', el }
+
+/* Where each astronaut stands (percent across the scene). Left group and right group, rocket in the middle.
+   Works up to ~6 people before the name tags would start overlapping. */
+function positions(n) {
+  const leftCount = Math.ceil(n / 2), rightCount = n - leftCount;
+  const spread = (k, from, to) => k === 1 ? [(from + to) / 2] : Array.from({ length: k }, (_, i) => from + (to - from) * i / (k - 1));
+  return [...spread(leftCount, 10, 29), ...(rightCount ? spread(rightCount, 71, 90) : [])];
+}
+
+function setBanner(t) { $('banner').textContent = t; }
+
+function resetScene() {
+  const rocket = $('rocket');
+  rocket.className = 'rocket';
+  rocket.removeAttribute('style');   // clears opacity/--rise left over from the last launch
+  $('burst').innerHTML = '';
+  $('smoke').classList.remove('go');
+  document.querySelectorAll('.astro').forEach(a => a.remove());
+  $('rows').innerHTML = '';
+}
+
+function render() {
+  resetScene();
+  const xs = positions(people.length);
+  people.forEach((p, i) => {
+    /* astronaut + name tag */
+    const a = document.createElement('div');
+    a.className = 'astro';
+    a.style.setProperty('--x', xs[i] + '%');
+    /* With 3+ people on one side the name tags would overlap, so every second one stands a bit higher (a zig-zag). */
+    const leftCount = Math.ceil(people.length / 2);
+    const side = i < leftCount ? leftCount : people.length - leftCount;
+    const k = i < leftCount ? i : i - leftCount;
+    a.style.setProperty('--lift', (side > 2 && k % 2 ? 52 : 0) + 'px');
+    a.innerHTML = `<div class="tag">${p.name}<br>${fmt(p.amount)}</div>${ASTRONAUT_SVG}`;
+    $('scene').appendChild(a);
+
+    /* payment row */
+    const li = document.createElement('li');
+    li.className = 'row';
+    li.innerHTML = `
+      <div class="who"><span class="n">${p.name}</span><span class="amt">${fmt(p.amount)}</span></div>
+      <button class="req">REQUEST PAYMENT<br>VIA PAYPAL</button>
+      <button class="pill ready">READY</button>`;
+li.querySelector('.req').onclick = () => requestPayment(i);
+li.querySelector('.pill').onclick = () => { if (p.status === 'waiting') markPaid(i); };   // DEMO: tap WAITING = pretend paid
+    $('rows').appendChild(li);
+    p.astro = a; p.row = li;
+  });
+  updateBanner();
+}
+
+function updateBanner() {
+    document.querySelectorAll('.mission').forEach(m => m.remove());   // clear the popup when a new bill starts
+    $('banner').classList.remove('done');
+  const paid = people.filter(p => p.status === 'paid').length;
+  setBanner(`WAITING FOR CREW • ${paid}/${people.length} ABOARD`);
+}
+
+async function requestPayment(i) {
+  const p = people[i];
+  if (p.status !== 'ready') return;
+  p.status = 'waiting';                         // set first so a double tap can't send two invoices
+  p.row.querySelector('.req').disabled = true;
+  const pill = p.row.querySelector('.pill');
+  pill.className = 'pill waiting'; pill.textContent = 'WAITING';
+  try {
+    const res = await fetch('/.netlify/functions/invoice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: p.name, amount: p.amount, email: BUYER_EMAILS[i % BUYER_EMAILS.length] }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(data));
+    p.invoiceId = data.id;
+    p.payLink = data.payLink;
+    console.log(`Invoice for ${p.name}:`, data.id, data.payLink);   // payLink = open it as the sandbox buyer to pay
+    poll(i);
+  } catch (e) {
+    console.error('Invoice failed', e);
+    p.status = 'ready';                         // let her try again
+    p.row.querySelector('.req').disabled = false;
+    pill.className = 'pill ready'; pill.textContent = 'ERROR - RETRY';
+  }
+}
+
+/* Ask our server every 3 seconds whether this invoice is paid. A page can't be told by PayPal directly,
+   so we "poll" (ask again and again). Stops by itself once paid. */
+function poll(i) {
+  const p = people[i];
+  const timer = setInterval(async () => {
+    if (p.status === 'paid') return clearInterval(timer);
+    try {
+      const res = await fetch('/.netlify/functions/status?id=' + encodeURIComponent(p.invoiceId));
+      const data = await res.json();
+      if (data.paid) { clearInterval(timer); markPaid(i); }
+    } catch (e) { /* a network blip: just try again in 3 seconds */ }
+  }, 3000);
+}
+
+function markPaid(i) {
+  const p = people[i];
+  if (p.status === 'paid') return;              // guard: never board twice
+  p.status = 'paid';
+  const pill = p.row.querySelector('.pill');
+  pill.className = 'pill paid'; pill.textContent = 'PAID';
+  /* Walking = changing --x to the rocket's centre; the CSS transition on `left` animates it. */
+  p.astro.style.setProperty('--x', '50%');
+  p.astro.style.setProperty('--lift', '0px');   // come down to the door level while walking
+  p.astro.classList.add('boarding');
+  setTimeout(() => p.astro.classList.add('inside'), 1100);   // fade into the door after arriving
+
+  updateBanner();
+  if (people.every(x => x.status === 'paid')) setTimeout(launch, 1600);
+}
+/* Puts the popup on the page at the spot where the rocket exploded.
+   We measure relative to the .phone container and attach it THERE (position: absolute),
+   so it scrolls and zooms together with the page instead of staying glued to the window. */
+function showMission(cx, cy) {
+  const phone = document.querySelector('.phone');
+  if (getComputedStyle(phone).position === 'static') phone.style.position = 'relative';  // needed so "absolute" positions inside it
+  const box = phone.getBoundingClientRect();     // where the container is on screen right now
+  const m = document.createElement('div');
+  m.className = 'mission';
+  m.style.left = (cx - box.left) + 'px';         // blast position minus container position = position inside the container
+  m.style.top = (cy - box.top) + 'px';
+  m.innerHTML = 'MISSION COMPLETE<small>PAYMENT SUCCESSFUL</small>';
+  phone.appendChild(m);
+}
+async function launch() {
+  const rocket = $('rocket');
+  rocket.classList.add('shaking', 'fire');
+  for (const n of [3, 2, 1]) { setBanner(`ALL BOARDED – LAUNCH IN ${n}`); await sleep(1000); }
+  setBanner('LIFTOFF!');
+  $('smoke').classList.add('go');
+
+  /* Measure where the rocket is on screen NOW and pick how far it must fly to end up about a quarter of the
+     way down from the top of the screen. Math.min(-80, ...) guarantees it always flies UP, never down. */
+  const r = rocket.getBoundingClientRect();
+  const startY = r.top + r.height / 2;
+  const targetY = Math.max(110, window.innerHeight * 0.25);
+  rocket.style.setProperty('--rise', Math.min(-80, targetY - startY) + 'px');
+  rocket.classList.remove('shaking');
+  rocket.classList.add('launch');
+
+  await sleep(2300);                       // wait for the rise to finish (CSS transition is 2.25s)
+  const e = rocket.getBoundingClientRect();
+  explode(e.left + e.width / 2, e.top + e.height / 2);
+  showMission(e.left + e.width / 2, e.top + e.height / 2);   // popup appears at the blast point
+  rocket.style.opacity = '0';               // the rocket vanishes inside the flash
+  await sleep(1400);
+  setBanner('BILL SETTLED ✓');
+}
+
+/* Explosion = flash + shockwave ring + flying sparks + drifting star bits, all absolutely positioned
+   at the point (cx, cy). Randomness makes every launch look slightly different. */
+function explode(cx, cy) {
+  const box = $('burst');
+  const add = (cls, vars) => {
+    const d = document.createElement('div');
+    d.className = cls;
+    for (const [k, v] of Object.entries(vars)) d.style.setProperty(k, v);
+    box.appendChild(d);
+  };
+  const pos = { left: cx + 'px', top: cy + 'px' };
+  add('flash', pos);
+  add('ring', pos);
+
+  const colors = ['#fff3b0', '#ffb347', '#ff6a3d', '#ffffff', '#7fb2ff'];
+  for (let i = 0; i < 36; i++) {
+    const a = Math.random() * Math.PI * 2;          // random direction
+    const dist = 90 + Math.random() * 130;          // random distance
+    add('spark', { ...pos, '--dx': Math.cos(a) * dist + 'px', '--dy': Math.sin(a) * dist + 25 + 'px',  // +25 = a bit of gravity
+                   '--c': colors[i % colors.length] });
+  }
+  for (let i = 0; i < 20; i++) {
+    const size = 2 + Math.random() * 2;
+    add('bit', { left: cx + (Math.random() - .5) * 170 + 'px', top: cy + (Math.random() - .5) * 90 + 'px',
+                 width: size + 'px', height: size + 'px',
+                 '--dx': (Math.random() - .5) * 40 + 'px', '--d': .3 + Math.random() * .8 + 's' });
+  }
+  setTimeout(() => { box.innerHTML = ''; }, 4500);
+}
+
+$('splitBtn').onclick = async () => {
+  const result = await splitBill($('bill').value);
+  /* Safety check: the AI only suggests shares; our own code confirms they add up before anything is shown. */
+  const sum = result.people.reduce((s, p) => s + p.amount, 0);
+  if (sum !== result.total) { setBanner(`SHARES (${fmt(sum)}) DON'T ADD UP TO ${fmt(result.total)}`); return; }
+  people = result.people.map(p => ({ ...p, status: 'ready' }));
+  render();
+};
+</script>
+</body>
+</html>
