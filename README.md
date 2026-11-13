@@ -2,9 +2,9 @@
 
 Split any bill by describing it in plain words. Gemini works out who owes what, PayPal sandbox orders collect each share, and each person's astronaut boards the rocket as they pay. When everyone is aboard, the rocket launches.
 
-- **Live demo:** [add Netlify link after deploy]
-- **Devpost project:** [add Devpost link]
-- **Demo video:** [add YouTube link]
+- **Live app:** https://orbit-split-aastha.netlify.app/
+- **Devpost project:** https://devpost.com/software/orbit-split
+- **Demo video:** https://youtu.be/xdJk2vOTWKE
 
 ## Why we built it
 Splitting a bill always ends in awkward math and chasing friends for money. We wanted to type a sentence and have the rest handled.
